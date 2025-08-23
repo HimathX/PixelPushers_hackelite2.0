@@ -1,9 +1,6 @@
 # Infact 📰
 
-<div align="center">
-  <img width="600" alt="Infact - Demo" src="https://github.com/user-attachments/assets/938ff545-6ffa-48fa-be93-59223fb535c3" />
-</div>
-
+<img width="1920" height="1080" alt="Infact - Demo" src="https://github.com/user-attachments/assets/938ff545-6ffa-48fa-be93-59223fb535c3" />
 
 A full-stack news processing and analysis platform that extracts facts from news articles, clusters similar content, and presents desensationalized information through a modern web interface. Tired of clickbait headlines and biased spins? InFact cuts through the noise to deliver just the facts—because who has time for drama in their daily news?
 
