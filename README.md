@@ -1,8 +1,8 @@
 # Infact 📰
 
-<p align="center">
-  <img src="path/to/infact_banner.png" alt="InFact Banner" width="50%">
-</p>
+<div align="center">
+  <img src="path/to/infact_banner.png" alt="InFact Banner" width="600">
+</div>
 
 A full-stack news processing and analysis platform that extracts facts from news articles, clusters similar content, and presents desensationalized information through a modern web interface. Tired of clickbait headlines and biased spins? InFact cuts through the noise to deliver just the facts—because who has time for drama in their daily news?
 
