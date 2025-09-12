@@ -100,21 +100,76 @@ async def process_articles_with_storage(
                     elif action == "merged":
                         clusters_merged += 1
                     
+                    # Create article summaries with only IDs and essential info
+                    article_summaries = []
+                    for article in articles_in_cluster:
+                        # Try to get article ID from database if it exists
+                        existing_article = article_collection.find_one({
+                            "$or": [
+                                {"title": article.title, "source": article.source},
+                                {"url": article.url} if article.url else {}
+                            ]
+                        })
+                        
+                        article_summary = {
+                            "article_id": str(existing_article["_id"]) if existing_article else None,
+                            "title": article.title,
+                            "source": article.source,
+                            "url": article.url,
+                            "published_at": article.published_at.isoformat() if article.published_at else None
+                        }
+                        article_summaries.append(article_summary)
+                    
+                    # Get full cluster details from MongoDB after storage
+                    stored_cluster = cluster_storage.get_cluster_by_id(cluster_id)
+                    
                     storage_results.append({
                         "cluster_id": cluster_id,
                         "cluster_name": cluster_result.cluster_name,
                         "action": action,
                         "articles_count": len(articles_in_cluster),
-                        "facts_count": len(cluster_result.facts),
-                        "musings_count": len(cluster_result.musings)
+                        "article_ids": [a["article_id"] for a in article_summaries if a["article_id"]],
+                        "article_references": article_summaries,  # Minimal article info
+                        
+                        # Full cluster details from MongoDB
+                        "cluster_details": {
+                            "facts": stored_cluster.get("facts", []) if stored_cluster else cluster_result.facts,
+                            "musings": stored_cluster.get("musings", []) if stored_cluster else cluster_result.musings,
+                            "generated_article": stored_cluster.get("generated_article", "") if stored_cluster else cluster_result.generated_article,
+                            "factual_summary": stored_cluster.get("factual_summary", "") if stored_cluster else cluster_result.factual_summary,
+                            "contextual_analysis": stored_cluster.get("contextual_analysis", "") if stored_cluster else cluster_result.contextual_analysis,
+                            "context": stored_cluster.get("context", "") if stored_cluster else cluster_result.context,
+                            "background": stored_cluster.get("background", "") if stored_cluster else cluster_result.background,
+                            "keywords": stored_cluster.get("keywords", []) if stored_cluster else [],
+                            "sources": stored_cluster.get("sources", []) if stored_cluster else list(set([a.source for a in articles_in_cluster if a.source])),
+                            "similarity_scores": stored_cluster.get("similarity_scores", []) if stored_cluster else cluster_result.similarity_scores,
+                            "created_at": stored_cluster.get("created_at").isoformat() if stored_cluster and stored_cluster.get("created_at") else datetime.now().isoformat(),
+                            "updated_at": stored_cluster.get("updated_at").isoformat() if stored_cluster and stored_cluster.get("updated_at") else datetime.now().isoformat(),
+                            "image_url": stored_cluster.get("image_url") if stored_cluster else cluster_result.image_url,  # ✅ ADD THIS LINE
+                            "article_urls": stored_cluster.get("article_urls", []) if stored_cluster else [a.url for a in articles_in_cluster if a.url]  # ✅ ADD THIS LINE TOO
+                        }
                     })
                 
                 except Exception as e:
                     logger.error(f"Failed to store cluster: {str(e)}")
+                    # For failed clusters, still provide minimal article info
+                    article_summaries = []
+                    for article in articles_in_cluster:
+                        article_summary = {
+                            "article_id": None,
+                            "title": article.title,
+                            "source": article.source,
+                            "url": article.url
+                        }
+                        article_summaries.append(article_summary)
+                    
                     storage_results.append({
                         "cluster_name": cluster_result.cluster_name,
                         "action": "failed",
-                        "error": str(e)
+                        "error": str(e),
+                        "articles_count": len(articles_in_cluster),
+                        "article_references": article_summaries,
+                        "attempted_storage": True
                     })
         
         # Store task result
@@ -132,22 +187,35 @@ async def process_articles_with_storage(
             "completed_at": datetime.now()
         }
         
-        logger.info(f"Scrape-process-store pipeline completed for task {task_id}")
+        logger.info(f"Cluster processing with storage completed for task {task_id}")
         
         processing_time = time.time() - start_time
         
-        return {
+        # Prepare comprehensive response
+        response_data = {
             "success": True,
             "task_id": task_id,
-            "status": "completed",  # Adding required field
+            "status": "completed",
             "message": f"Processed {len(request.articles)} articles into {len(processed_clusters)} clusters and stored in database",
-            "clusters_processed": len(processed_clusters),  # Adding required field
+            "clusters_processed": len(processed_clusters),
             "clusters_stored": clusters_stored,
             "clusters_merged": clusters_merged,
             "storage_results": storage_results,
             "timestamp": datetime.now().isoformat(),
-            "processing_time": processing_time
+            "processing_time": processing_time,
+            "summary": {
+                "total_articles_processed": len(request.articles),
+                "total_clusters_created": len(processed_clusters),
+                "successful_storage_operations": clusters_stored + clusters_merged,
+                "failed_operations": len([r for r in storage_results if r.get("action") == "failed"]),
+                "total_facts_extracted": sum(len(r.get("cluster_details", {}).get("facts", [])) for r in storage_results if "cluster_details" in r),
+                "total_musings_extracted": sum(len(r.get("cluster_details", {}).get("musings", [])) for r in storage_results if "cluster_details" in r),
+                "unique_sources": len(set(source for r in storage_results if "cluster_details" in r for source in r.get("cluster_details", {}).get("sources", []))),
+                "articles_with_urls": len([r for r in storage_results for a in r.get("article_references", []) if a.get("url")])
+            }
         }
+        
+        return response_data
         
     except HTTPException:
         raise
@@ -243,7 +311,7 @@ async def scrape_process_and_store(
         
         # Get recent articles from database
         cursor = article_collection.find(query).limit(max_articles).sort("published_at", -1)
-
+        
         # Convert to Article objects
         scraped_articles = []
         for doc in cursor:
@@ -255,17 +323,40 @@ async def scrape_process_and_store(
                     content=doc.get('content', ''),
                     source=doc.get('source'),
                     published_at=published_at,
-                    url=doc.get('url')
+                    url=doc.get('url'),
+                    image_url=doc.get('image_url')
                 )
                 scraped_articles.append(article)
             except Exception as e:
                 logger.warning(f"Failed to convert document to Article: {str(e)}")
                 continue
         
+        # If no recent articles found, try without date filter
+        if not scraped_articles:
+            logger.warning(f"No articles found in the last {days_back} days, trying all articles")
+            cursor = article_collection.find({}).limit(max_articles).sort("_id", -1)
+            
+            for doc in cursor:
+                try:
+                    published_at = doc.get('published_at')
+                    
+                    article = Article(
+                        title=doc.get('title', ''),
+                        content=doc.get('content', ''),
+                        source=doc.get('source'),
+                        published_at=published_at,
+                        url=doc.get('url'),
+                        image_url=doc.get('image_url')
+                    )
+                    scraped_articles.append(article)
+                except Exception as e:
+                    logger.warning(f"Failed to convert document to Article: {str(e)}")
+                    continue
+        
         if not scraped_articles:
             raise HTTPException(
                 status_code=404, 
-                detail=f"No articles found in the last {days_back} days"
+                detail="No articles found in database"
             )
         
         if len(scraped_articles) < 2:

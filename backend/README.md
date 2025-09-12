@@ -48,6 +48,14 @@ For more detailed information about the InFact pipeline and its implementation, 
    python -m spacy download en_core_web_sm
    ```
 
+5. **Configure environment variables**
+   ```bash
+   # Copy the example .env file and modify as needed
+   cp .env.example .env
+   
+   # Edit the .env file with your MongoDB connection details and other settings
+   ```
+
 5. **Set up environment variables**
    ```bash
    copy .env.example .env

@@ -2,12 +2,16 @@ import google.generativeai as genai
 from typing import List, Dict, Any
 import os
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 class AIGenerator:
     def __init__(self):
-        api_key = "AIzaSyC24Tl1deS5-EuauSolF_4BivH52Z6wBSs"
+        api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             logger.error("GEMINI_API_KEY not found in environment variables")
             raise ValueError("GEMINI_API_KEY is required")
