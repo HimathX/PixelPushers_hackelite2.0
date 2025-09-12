@@ -58,7 +58,7 @@ class ClusterStorageManager:
         cluster_result: ClusterResult,
         articles: List[Article],
         force_new: bool = False,
-        article_data: List[Dict[str, Any]] = None  # Added parameter for full article data
+        article_data: Optional[List[Dict[str, Any]]] = None  # Added parameter for full article data
     ) -> Tuple[str, str]:
         """Store a cluster in MongoDB or merge with an existing one"""
         
@@ -79,6 +79,9 @@ class ClusterStorageManager:
                 }
                 article_data.append(article_dict)
         
+        # Extract keywords from cluster and articles
+        keywords = self.extract_keywords(cluster_result, articles)
+        
         # Prepare cluster data for storage
         cluster_data = {
             "name": cluster_result.cluster_name,
@@ -89,7 +92,7 @@ class ClusterStorageManager:
             "contextual_analysis": cluster_result.contextual_analysis,
             "context": cluster_result.context,
             "background": cluster_result.background,
-            "keywords": cluster_result.keywords,
+            "keywords": keywords,
             "article_count": len(articles),
             "sources": list(set([a.source for a in articles if a.source])),
             "article_urls": [a.url for a in articles if a.url],
