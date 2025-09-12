@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, BackgroundTasks
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
-from schemas.article import Article
-from schemas.rss_feeds import (
+import uuid
+from schemas import (
     RSSExtractionRequest, 
-    # RSSExtractionResponse  # removed - endpoint will return List[Article]
+    RSSExtractionResponse,
+    Article
 )
 from utils.data_collection.rss_extractor import RSSExtractor
+from core.database import article_collection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(tags=["rss-extraction"])
+
+# Store extraction tasks (in-memory for simplicity)
+extraction_tasks = {}
 
 # Default feed URLs
 feed_urls = [
@@ -26,11 +31,10 @@ feed_urls = [
     "https://www.aljazeera.com/xml/rss/all.xml"
 ]
 
-@router.post("/extract", response_model=List[Article])
+@router.post("/extract", response_model=RSSExtractionResponse)
 async def extract_rss_feeds(request: RSSExtractionRequest):
     """
-    Extract articles from RSS feeds and return a plain list of Article objects.
-    (No database storage performed.)
+    Extract articles from RSS feeds and store them in the database
     """
     try:
         extractor = RSSExtractor()
@@ -54,8 +58,11 @@ async def extract_rss_feeds(request: RSSExtractionRequest):
             verbose=request.verbose
         )
         
-        # Build list of Article models (no DB operations)
+        # Build list of Article models and store in database
         articles_out: List[Article] = []
+        stored_count = 0
+        skipped_count = 0
+        
         for article_data in all_articles:
             try:
                 article = Article(
@@ -66,16 +73,47 @@ async def extract_rss_feeds(request: RSSExtractionRequest):
                     source=article_data.get('author'),
                     image_url=article_data.get('image_url')
                 )
-                articles_out.append(article)
+                
+                # Convert to dict for MongoDB
+                article_dict = article.dict()
+                article_dict["extracted_at"] = datetime.now()
+                
+                # Check for duplicates by URL or title before inserting
+                existing = article_collection.find_one({
+                    "$or": [
+                        {"url": article_dict["url"]},
+                        {"title": article_dict["title"]}
+                    ]
+                })
+                
+                if existing:
+                    logger.info(f"Skipping duplicate article: {article_dict['title']}")
+                    skipped_count += 1
+                    continue
+                
+                # Insert into MongoDB
+                result = article_collection.insert_one(article_dict)
+                if result.inserted_id:
+                    logger.info(f"Stored article: {article_dict['title']}")
+                    stored_count += 1
+                    articles_out.append(article)
+                
             except Exception as e:
-                logger.warning(f"Skipping malformed article data: {e}")
+                logger.warning(f"Error processing article: {e}")
                 continue
 
-        # Return plain list of articles (matches response_model=List[Article])
-        return articles_out
+        return RSSExtractionResponse(
+            success=True,
+            message=f"Successfully extracted {len(all_articles)} articles, stored {stored_count}, skipped {skipped_count} duplicates",
+            articles=articles_out,
+            total_articles=len(all_articles),
+            articles_stored=stored_count,
+            articles_skipped=skipped_count
+        )
     except Exception as e:
         logger.error(f"Failed to extract RSS feeds: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to extract RSS feeds: {str(e)}"
         )
+

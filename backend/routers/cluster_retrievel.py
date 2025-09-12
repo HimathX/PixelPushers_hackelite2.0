@@ -64,8 +64,8 @@ async def get_cluster_by_id(cluster_id: str):
             "keywords": cluster.get("keywords", []),
             "similarity_scores": cluster.get("similarity_scores", []),
             "source_counts": cluster.get("source_counts", {}),
-            "created_at": cluster.get("created_at").isoformat() if cluster.get("created_at") else None,
-            "updated_at": cluster.get("updated_at").isoformat() if cluster.get("updated_at") else None
+            "created_at": cluster.get("created_at").isoformat() if cluster.get("created_at") else None, #type:ignore
+            "updated_at": cluster.get("updated_at").isoformat() if cluster.get("updated_at") else None #type:ignore
         }
         
         return {
@@ -422,8 +422,8 @@ async def get_cluster_full_content(cluster_id: str):
             "similarity_scores": cluster.get('similarity_scores', []),
             
             # Timestamps
-            "created_at": cluster.get('created_at').isoformat() if cluster.get('created_at') else None,
-            "updated_at": cluster.get('updated_at').isoformat() if cluster.get('updated_at') else None
+            "created_at": cluster.get('created_at').isoformat() if cluster.get('created_at') else None, #type:ignore
+            "updated_at": cluster.get('updated_at').isoformat() if cluster.get('updated_at') else None #type:ignore
         }
         
         return {

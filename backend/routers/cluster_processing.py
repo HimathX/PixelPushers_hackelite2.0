@@ -5,8 +5,8 @@ import uuid
 import logging
 from datetime import datetime, timedelta
 from bson import ObjectId
-from schemas.article import Article, ClusterResult
-from schemas.cluster_storage import (
+from schemas import Article, ClusterResult
+from schemas import (
     ProcessingWithStorageRequest, ProcessingWithStorageResponse
 )
 from utils.cluster_storage import ClusterStorageManager
@@ -89,11 +89,65 @@ async def process_articles_with_storage(
             # Store each cluster
             for cluster_result, articles_in_cluster in clustered_articles:
                 try:
+                    # First, store all articles in the article collection to ensure they have IDs
+                    stored_article_ids = []
+                    article_data_list = []
+                    
+                    for article in articles_in_cluster:
+                        # Check if article already exists in database
+                        existing_article = article_collection.find_one({
+                            "$or": [
+                                {"title": article.title, "source": article.source},
+                                {"url": article.url} if article.url else {}
+                            ]
+                        })
+                        
+                        if existing_article:
+                            # Article already exists, use its ID
+                            article_id = existing_article["_id"]
+                        else:
+                            # Store new article in article collection
+                            article_dict = article.dict()
+                            article_dict["extracted_at"] = datetime.now()
+                            article_dict["clustered_at"] = datetime.now()
+                            
+                            insert_result = article_collection.insert_one(article_dict)
+                            article_id = insert_result.inserted_id
+                        
+                        # Store article ID and full article data
+                        stored_article_ids.append(article_id)
+                        
+                        # Create complete article data for storage in cluster
+                        article_data = {
+                            "article_id": str(article_id),
+                            "title": article.title,
+                            "content": article.content,  # Store full content
+                            "source": article.source,
+                            "url": article.url,
+                            "published_at": article.published_at.isoformat() if article.published_at else None,
+                            "image_url": article.image_url if hasattr(article, "image_url") else None
+                        }
+                        article_data_list.append(article_data)
+                    
+                    # Now store/merge the cluster with full article data
                     cluster_id, action = await cluster_storage.store_or_merge_cluster(
                         cluster_result=cluster_result,
                         articles=articles_in_cluster,
-                        force_new=request.force_new_clusters
+                        force_new=request.force_new_clusters,
+                        article_data=article_data_list  # Pass full article data
                     )
+                    
+                    # Update the articles to reference this cluster
+                    for article_id in stored_article_ids:
+                        article_collection.update_one(
+                            {"_id": article_id},
+                            {
+                                "$set": {
+                                    "cluster_id": str(cluster_id),
+                                    "clustered_at": datetime.now()
+                                }
+                            }
+                        )
                     
                     if action == "created":
                         clusters_stored += 1
@@ -102,21 +156,13 @@ async def process_articles_with_storage(
                     
                     # Create article summaries with only IDs and essential info
                     article_summaries = []
-                    for article in articles_in_cluster:
-                        # Try to get article ID from database if it exists
-                        existing_article = article_collection.find_one({
-                            "$or": [
-                                {"title": article.title, "source": article.source},
-                                {"url": article.url} if article.url else {}
-                            ]
-                        })
-                        
+                    for article_data in article_data_list:
                         article_summary = {
-                            "article_id": str(existing_article["_id"]) if existing_article else None,
-                            "title": article.title,
-                            "source": article.source,
-                            "url": article.url,
-                            "published_at": article.published_at.isoformat() if article.published_at else None
+                            "article_id": article_data["article_id"],
+                            "title": article_data["title"],
+                            "source": article_data["source"],
+                            "url": article_data["url"],
+                            "published_at": article_data["published_at"]
                         }
                         article_summaries.append(article_summary)
                     
@@ -128,7 +174,7 @@ async def process_articles_with_storage(
                         "cluster_name": cluster_result.cluster_name,
                         "action": action,
                         "articles_count": len(articles_in_cluster),
-                        "article_ids": [a["article_id"] for a in article_summaries if a["article_id"]],
+                        "article_ids": [a["article_id"] for a in article_summaries],
                         "article_references": article_summaries,  # Minimal article info
                         
                         # Full cluster details from MongoDB
@@ -143,10 +189,12 @@ async def process_articles_with_storage(
                             "keywords": stored_cluster.get("keywords", []) if stored_cluster else [],
                             "sources": stored_cluster.get("sources", []) if stored_cluster else list(set([a.source for a in articles_in_cluster if a.source])),
                             "similarity_scores": stored_cluster.get("similarity_scores", []) if stored_cluster else cluster_result.similarity_scores,
-                            "created_at": stored_cluster.get("created_at").isoformat() if stored_cluster and stored_cluster.get("created_at") else datetime.now().isoformat(),
-                            "updated_at": stored_cluster.get("updated_at").isoformat() if stored_cluster and stored_cluster.get("updated_at") else datetime.now().isoformat(),
-                            "image_url": stored_cluster.get("image_url") if stored_cluster else cluster_result.image_url,  # ✅ ADD THIS LINE
-                            "article_urls": stored_cluster.get("article_urls", []) if stored_cluster else [a.url for a in articles_in_cluster if a.url]  # ✅ ADD THIS LINE TOO
+                            "created_at": stored_cluster.get("created_at").isoformat() if stored_cluster and stored_cluster.get("created_at") else datetime.now().isoformat(), #type:ignore
+                            "updated_at": stored_cluster.get("updated_at").isoformat() if stored_cluster and stored_cluster.get("updated_at") else datetime.now().isoformat(), #type:ignore
+                            "image_url": stored_cluster.get("image_url") if stored_cluster else cluster_result.image_url,
+                            "article_urls": stored_cluster.get("article_urls", []) if stored_cluster else [a.url for a in articles_in_cluster if a.url],
+                            # Now we have the full article data stored
+                            "has_full_articles": True
                         }
                     })
                 
@@ -383,11 +431,63 @@ async def scrape_process_and_store(
         
         for cluster_result, articles_in_cluster in clustered_articles:
             try:
+                # Store each article in the cluster to ensure they have IDs
+                stored_article_ids = []
+                article_data_list = []
+                
+                for article in articles_in_cluster:
+                    # Check if article already exists in database
+                    existing_article = article_collection.find_one({
+                        "$or": [
+                            {"title": article.title, "source": article.source},
+                            {"url": article.url} if article.url else {}
+                        ]
+                    })
+                    
+                    if existing_article:
+                        article_id = existing_article["_id"]
+                    else:
+                        # Store new article in article collection
+                        article_dict = article.dict()
+                        article_dict["extracted_at"] = datetime.now()
+                        article_dict["clustered_at"] = datetime.now()
+                        
+                        insert_result = article_collection.insert_one(article_dict)
+                        article_id = insert_result.inserted_id
+                    
+                    stored_article_ids.append(article_id)
+                    
+                    # Create complete article data for storage in cluster
+                    article_data = {
+                        "article_id": str(article_id),
+                        "title": article.title,
+                        "content": article.content,
+                        "source": article.source,
+                        "url": article.url,
+                        "published_at": article.published_at.isoformat() if article.published_at else None,
+                        "image_url": article.image_url if hasattr(article, "image_url") else None
+                    }
+                    article_data_list.append(article_data)
+                
+                # Store cluster in clusters collection
                 cluster_id, action = await cluster_storage.store_or_merge_cluster(
                     cluster_result=cluster_result,
                     articles=articles_in_cluster,
-                    force_new=force_new_clusters
+                    force_new=force_new_clusters,
+                    article_data=article_data_list
                 )
+                
+                # Update articles to reference this cluster
+                for article_id in stored_article_ids:
+                    article_collection.update_one(
+                        {"_id": article_id},
+                        {
+                            "$set": {
+                                "cluster_id": str(cluster_id),
+                                "clustered_at": datetime.now()
+                            }
+                        }
+                    )
                 
                 if action == "created":
                     clusters_stored += 1
@@ -396,13 +496,20 @@ async def scrape_process_and_store(
                 
                 storage_results.append({
                     "cluster_id": cluster_id,
+                    "cluster_name": cluster_result.cluster_name,
                     "action": action,
-                    "articles": articles_in_cluster
+                    "articles_count": len(articles_in_cluster),
+                    "article_ids": [str(aid) for aid in stored_article_ids]
                 })
 
             except Exception as e:
-                logger.error(f"Failed to store or merge cluster: {str(e)}")
-                continue
+                logger.error(f"Failed to store cluster in clusters collection: {str(e)}")
+                storage_results.append({
+                    "cluster_name": cluster_result.cluster_name,
+                    "action": "failed",
+                    "error": str(e),
+                    "articles_count": len(articles_in_cluster)
+                })
 
         logger.info(f"Cluster processing completed for task {task_id}: {len(storage_results)} clusters processed")
         return {
@@ -410,7 +517,9 @@ async def scrape_process_and_store(
             "task_id": task_id,
             "clusters_stored": clusters_stored,
             "clusters_merged": clusters_merged,
-            "storage_results": storage_results
+            "storage_results": storage_results,
+            "total_articles": len(scraped_articles),
+            "total_clusters": len(processed_clusters)
         }
 
     except Exception as e:

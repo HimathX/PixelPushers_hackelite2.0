@@ -57,14 +57,50 @@ class ClusterStorageManager:
         self,
         cluster_result: ClusterResult,
         articles: List[Article],
-        force_new: bool = False
+        force_new: bool = False,
+        article_data: List[Dict[str, Any]] = None  # Added parameter for full article data
     ) -> Tuple[str, str]:
-        """
-        Store a new cluster or merge with existing similar cluster
+        """Store a cluster in MongoDB or merge with an existing one"""
         
-        Returns:
-            Tuple of (cluster_id, action) where action is 'created', 'merged', or 'updated'
-        """
+        if not articles:
+            raise ValueError("No articles provided for cluster storage")
+        
+        # If full article data wasn't provided, create it
+        if article_data is None:
+            article_data = []
+            for article in articles:
+                article_dict = {
+                    "title": article.title,
+                    "content": article.content,  # Store full content
+                    "source": article.source,
+                    "url": article.url,
+                    "published_at": article.published_at.isoformat() if article.published_at else None,
+                    "image_url": article.image_url if hasattr(article, "image_url") else None
+                }
+                article_data.append(article_dict)
+        
+        # Prepare cluster data for storage
+        cluster_data = {
+            "name": cluster_result.cluster_name,
+            "facts": cluster_result.facts,
+            "musings": cluster_result.musings,
+            "generated_article": cluster_result.generated_article,
+            "factual_summary": cluster_result.factual_summary,
+            "contextual_analysis": cluster_result.contextual_analysis,
+            "context": cluster_result.context,
+            "background": cluster_result.background,
+            "keywords": cluster_result.keywords,
+            "article_count": len(articles),
+            "sources": list(set([a.source for a in articles if a.source])),
+            "article_urls": [a.url for a in articles if a.url],
+            "similarity_scores": cluster_result.similarity_scores,
+            "image_url": cluster_result.image_url,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            # Store full article data with the cluster
+            "articles": article_data
+        }
+        
         try:
             # Extract keywords and compute embedding
             keywords = self.extract_keywords(cluster_result, articles)

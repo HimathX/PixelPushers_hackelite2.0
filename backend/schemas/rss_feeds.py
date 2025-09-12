@@ -69,10 +69,12 @@ class RSSExtractionRequest(BaseModel):
 
 
 class RSSExtractionResponse(BaseModel):
-    """
-    Response model for RSS feed extraction
-    """
-    total_articles: int = Field(..., description="Total number of articles extracted")
+    success: bool
+    message: str  
+    articles: List[Article]
+    total_articles: int
+    articles_stored: Optional[int] = None
+    articles_skipped: Optional[int] = None
     
 class ExtractionStatus(BaseModel):
     """
