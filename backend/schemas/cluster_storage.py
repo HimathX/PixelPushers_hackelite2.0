@@ -18,6 +18,8 @@ class StoredCluster(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
     updated_at: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
     article_ids: List[str] = Field(default=[], description="IDs of articles in this cluster")
+    article_urls: List[str] = Field(default=[], description="URLs of articles in this cluster")
+    image_url: Optional[str] = Field(None, description="Representative image URL for the cluster")
     
 class ClusterStorageRequest(BaseModel):
     """Request model for storing clusters"""
@@ -115,6 +117,7 @@ class ProcessingWithStorageRequest(BaseModel):
 
 class ProcessingWithStorageResponse(BaseModel):
     """Response model for processing with storage"""
+    success: bool
     task_id: str
     status: str
     message: str
@@ -124,3 +127,4 @@ class ProcessingWithStorageResponse(BaseModel):
     storage_results: List[Dict[str, Any]]
     timestamp: str
     processing_time: Optional[float] = None
+    summary: Optional[Dict[str, Any]] = None

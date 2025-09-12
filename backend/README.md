@@ -1,6 +1,8 @@
-# Ground News API - AI-Powered News Desensationalization System
+# InFact Platform (Backend)
 
 A FastAPI application that processes news articles to remove sensationalism through AI-powered clustering and fact extraction. The system takes multiple news articles about similar topics, clusters them, extracts factual information, and generates neutral, desensationalized articles.
+
+For more detailed information about the InFact pipeline and its implementation, visit: https://github.com/LazySeaHorse/Infact
 
 ## Features
 
@@ -9,14 +11,18 @@ A FastAPI application that processes news articles to remove sensationalism thro
 - **AI Article Generation**: Integration with Google Gemini API for neutral article generation
 - **RESTful API**: Async FastAPI with background processing and task tracking
 - **Scalable Architecture**: Modular design with proper error handling and validation
+- **RSS Feed Integration**: Automated news extraction from configurable sources
+- **Cluster Management**: Tools for creating, analyzing and maintaining article clusters
 
 ## Tech Stack
 
-- **Backend**: FastAPI, Python 3.8+
-- **NLP**: spaCy, sentence-transformers, scikit-learn, gensim
+- **Backend**: FastAPI (0.115+), Python 3.11+
+- **NLP**: spaCy 3.7+, sentence-transformers 3.0+, scikit-learn 1.3+, gensim 4.3+
 - **AI**: Google Gemini API
 - **Processing**: TF-IDF, LDA topic modeling, KMeans clustering
-- **Visualization**: PCA for 2D embeddings
+- **Database**: MongoDB via pymongo
+- **Web Scraping**: feedparser, beautifulsoup4, aiohttp
+- **Visualization**: plotly, matplotlib, seaborn (for analytics)
 
 ## Installation
 
