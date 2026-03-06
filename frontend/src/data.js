@@ -1,11 +1,9 @@
-// ---------------------------------------------------------
-// Data (dummy but realistic, news-related)
-// ---------------------------------------------------------
+-
 
-function hoursAgo(h) {
-    const d = new Date(Date.now() - h * 60 * 60 * 1000);
-    return d.toISOString();
-}
+    function hoursAgo(h) {
+        const d = new Date(Date.now() - h * 60 * 60 * 1000);
+        return d.toISOString();
+    }
 
 export const articles = [
     {
