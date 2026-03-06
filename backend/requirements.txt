@@ -71,3 +71,6 @@ bleach==6.0.0
 
 # Date parsing
 python-dateutil==2.8.2
+
+# MongoDB driver
+pymongo>=4.0.0
